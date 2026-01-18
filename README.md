@@ -13,7 +13,7 @@ Methodology
 
 Visualisation of results 
 ![Predicted vs Actual](figures/predicted_vs_actual.png)
-![Final_Results](Final_Results_30_days.png)
+![Final_Results](figures/Final_Results_30_days.png)
 
 
 
