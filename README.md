@@ -12,5 +12,7 @@ Methodology
 - Forecasted future prices using trained LSTM model
 
 Visualisation of results 
+![Predicted vs Actual](figures/predicted_vs_actual.png)
+
 
 
