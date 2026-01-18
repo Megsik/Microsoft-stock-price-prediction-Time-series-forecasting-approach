@@ -13,6 +13,8 @@ Methodology
 
 Visualisation of results 
 ![Predicted vs Actual](figures/predicted_vs_actual.png)
+![Final_Results](Stock_predict_30_days.png)
+
 
 
 
