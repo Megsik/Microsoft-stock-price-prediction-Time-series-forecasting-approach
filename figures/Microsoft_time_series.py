@@ -1,0 +1,187 @@
+import warnings
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from tensorflow.keras import optimizers
+from tensorflow.keras.utils import plot_model
+from tensorflow.keras.models import Sequential, Model
+from tensorflow.keras.layers import Conv1D, MaxPooling1D , Dropout
+from keras.layers import Dense, LSTM, RepeatVector, TimeDistributed, Flatten
+from sklearn.metrics import mean_squared_error
+from sklearn.model_selection import train_test_split
+#from plotly.offline import init_notebook_mode, iplot
+
+# For scripts / VS Code:
+import matplotlib
+import matplotlib.pyplot as plt
+import warnings
+
+#import plotly.plotly as py
+#import plotly.graph_objs as go
+#from plotly.offline import init_notebook_mode, iplot
+
+#matplotlib inline
+#warnings.filterwarnings("ignore")
+#init_notebook_mode(connected=True)
+
+# Set seeds to make the experiment more reproducible.
+import tensorflow as tf
+tf.random.set_seed(42)
+
+Main_data = pd.read_csv('C:/Users/Dell/Downloads/Microsoft_stock/Microsoft_Stock.csv',parse_dates=['Date'])
+print(Main_data.head())
+Main_data.info() # Check for null values and data types
+Main_data['Date'] = pd.to_datetime(Main_data['Date'])
+Main_data.set_index('Date', inplace=True)
+Main_data.sort_index(inplace=True)
+
+
+
+#EDA: Plotting the Close price over time
+plt.figure(figsize=(12,6))
+plt.plot(Main_data['Close'], label='Close Price')
+plt.title('Microsoft Stock Close Price Over Time')
+plt.xlabel('Date')
+plt.ylabel('Normalized Close Price')
+plt.legend()
+#plt.show()
+
+from statsmodels.tsa.seasonal import seasonal_decompose
+import matplotlib.pyplot as plt
+decomposition = seasonal_decompose(Main_data['Close'], model='additive', period=365)
+figure = decomposition.plot()
+figure.set_size_inches(12, 8)
+#plt.show()
+
+Main_data['SMA_50'] = Main_data['Close'].rolling(window=50).mean()
+Main_data['SMA_200'] = Main_data['Close'].rolling(window=200).mean()
+plt.figure(figsize=(12,6))
+plt.plot(Main_data['Close'], label='Close Price')
+plt.plot(Main_data['SMA_50'], label='50-Day SMA', color='orange')
+plt.plot(Main_data['SMA_200'], label='200-Day SMA', color='red')
+plt.title('Microsoft Stock Close Price with SMA')
+plt.xlabel('Date')
+plt.ylabel('Normalized Close Price')
+plt.legend()
+#plt.show()
+
+
+from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
+plt.figure(figsize=(12,6))
+plot_acf(Main_data['Close'], lags=50)
+plt.title('Autocorrelation Function (ACF)')
+plt.show()
+plt.figure(figsize=(12,6))
+plot_pacf(Main_data['Close'], lags=50)
+plt.title('Partial Autocorrelation Function (PACF)')
+#plt.show()
+
+import seaborn as sns
+plt.figure(figsize=(10,6))
+sns.boxplot(data=Main_data, x=Main_data.index.month, y='Close')
+plt.title('Monthly Boxplot of Microsoft Close Prices')
+plt.xlabel('Month')
+plt.ylabel('Normalized Close Price')
+#plt.show()
+
+from statsmodels.tsa.stattools import adfuller
+result = adfuller(Main_data['Close'])
+print('ADF Statistic:', result[0])
+print('p-value:', result[1])
+
+Main_data['Close_diff'] = Main_data['Close'].diff().dropna()
+
+
+from sklearn.model_selection import train_test_split
+def create_dataset(data, look_back=1):
+    dataX = []
+    dataY = []
+    for i in range(len(data) - look_back):
+        dataX.append(data[i:i + look_back])
+        dataY.append(data[i + look_back])
+    return np.array(dataX), np.array(dataY)
+
+X, y = create_dataset(Main_data[['Close']].values, look_back=60)
+
+X_train_ori, X_test_ori, y_train_ori, y_test_ori = train_test_split(
+    X, y, test_size=0.2, shuffle=False
+)
+
+# Reshape + scale X
+n_samples, timesteps, n_features = X_train_ori.shape
+from sklearn.preprocessing import MinMaxScaler
+feature_scaler = MinMaxScaler()
+target_scaler = MinMaxScaler()
+X_train = feature_scaler.fit_transform(
+    X_train_ori.reshape(-1, n_features)
+).reshape(n_samples, timesteps, n_features)
+
+X_test = feature_scaler.transform(
+    X_test_ori.reshape(-1, n_features)
+).reshape(X_test_ori.shape[0], timesteps, n_features)
+
+# Scale y
+y_train = target_scaler.fit_transform(y_train_ori)
+y_test = target_scaler.transform(y_test_ori)
+
+
+model = Sequential([
+    LSTM(50, return_sequences=True, input_shape=(X_train.shape[1], X_train.shape[2])),
+    Dropout(0.2),
+    LSTM(50, return_sequences=False),
+    Dropout(0.2),
+    Dense(25),
+    Dense(1)] 
+)
+
+model.compile(optimizer='adam', loss='mean_squared_error')
+model.fit(X_train, y_train, batch_size=32, epochs=50, validation_data=(X_test, y_test))
+Predictions = model.predict(X_test)
+y_test = target_scaler.inverse_transform(y_test)
+Predictions = target_scaler.inverse_transform(Predictions)
+rmse = np.sqrt(mean_squared_error(y_test, Predictions))
+print("Root Mean Squared Error:", rmse)
+
+plt.figure(figsize=(12,6))
+plt.plot(y_test, label='Actual Close Price')
+plt.plot(Predictions, label='Predicted Close Price')
+plt.title('Microsoft Stock Price Prediction')
+plt.xlabel('Time')
+plt.ylabel('Close Price')
+plt.legend()
+plt.show()
+
+last_60_days = Main_data['Close'].values[-60:]
+last_60_days = last_60_days.reshape(-1, 1)
+last_60_days_scaled = target_scaler.transform(last_60_days)
+future_days = 30
+Future_Predictions = []
+current_batch = last_60_days_scaled.copy()
+for _ in range(future_days):
+    current_batch_reshaped = current_batch.reshape((1, 60, 1))
+    next_pred = model.predict(current_batch_reshaped)[0]
+    Future_Predictions.append(next_pred)
+    current_batch = np.vstack((current_batch[1:], next_pred))
+
+Future_Predictions = np.array(Future_Predictions)
+Future_Predictions = target_scaler.inverse_transform(Future_Predictions)
+
+import pandas as pd
+future_index = pd.date_range(
+    start=Main_data.index[-1] + pd.Timedelta(days=1),
+    periods=31,
+    freq='D'
+   )[1:]
+future_df = pd.DataFrame(data=Future_Predictions, index=future_index, columns=['Predicted_Close']) 
+
+plt.figure(figsize=(12,6))
+plt.plot(Main_data['Close'], label='Historical Close Price')
+plt.plot(future_df['Predicted_Close'], label='Predicted Close Price', color='orange')
+plt.title('Microsoft Stock Price Prediction for Next 30 Days')
+plt.xlabel('Date')
+plt.ylabel('Close Price')
+plt.legend()
+plt.show()
+
+
+
